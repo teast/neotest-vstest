@@ -11,6 +11,7 @@ local M = {}
 ---@field reference_file string
 ---@field generated_to_reference { [number]: number }
 ---@field reference_to_generated { [number]: number }
+---@field generated_file string?
 
 --- Parses #line directives from C# source code
 --- Returns a table mapping generated file lines to reference file lines
@@ -18,7 +19,7 @@ local M = {}
 ---@param source string C# source code
 ---@return LineDirectiveMap?
 function M.parse_line_directives(source)
-  local lines = lib.files.split(source, "\n")
+  local lines = vim.split(source, "\n", { trimempty = true })
   local reference_file = nil
   local generated_to_reference = {}
   local reference_to_generated = {}
@@ -51,31 +52,32 @@ function M.parse_line_directives(source)
     reference_file = reference_file,
     generated_to_reference = generated_to_reference,
     reference_to_generated = reference_to_generated,
+    generated_file = nil,  -- Will be set by dotnet_utils.cache_line_directives
   }
 end
 
 --- Translates a line number from the generated file to the reference file
 ---@param line_number number Line number in the generated file (1-indexed)
 ---@param directive_map LineDirectiveMap
----@return number Translated line number in the reference file
+---@return number? Translated line number in the reference file, or nil if not found
 function M.translate_generated_to_reference(line_number, directive_map)
   local mapping = directive_map.generated_to_reference[line_number]
   if mapping then
     return mapping
   end
-  return line_number
+  return nil
 end
 
 --- Translates a line number from the reference file to the generated file
 ---@param line_number number Line number in the reference file (1-indexed)
 ---@param directive_map LineDirectiveMap
----@return number Translated line number in the generated file
+---@return number? Translated line number in the generated file, or nil if not found
 function M.translate_reference_to_generated(line_number, directive_map)
   local mapping = directive_map.reference_to_generated[line_number]
   if mapping then
     return mapping
   end
-  return line_number
+  return nil
 end
 
 return M

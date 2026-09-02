@@ -263,6 +263,7 @@ function dotnet_utils.cache_line_directives(file_path, content)
   if content then
     local directives = line_directive.parse_line_directives(content)
     if directives then
+      directives.generated_file = normalized_path
       line_directive_cache[normalized_path] = directives
       logger.debug(
         "neotest-vstest: cached line directives for "
@@ -289,7 +290,10 @@ end
 function dotnet_utils.translate_generated_to_reference(file_path, line_number)
   local directives = dotnet_utils.get_line_directives(file_path)
   if directives then
-    return line_directive.translate_generated_to_reference(line_number, directives), directives.reference_file
+    local translated = line_directive.translate_generated_to_reference(line_number, directives)
+    if translated then
+      return translated, directives.reference_file
+    end
   end
   return line_number, nil
 end
@@ -299,11 +303,38 @@ end
 ---@param line_number number
 ---@return number, string? translated_line, generated_file
 function dotnet_utils.translate_reference_to_generated(file_path, line_number)
+  local normalized_ref_path = vim.fs.normalize(file_path)
+  
+  -- First try to look up by file_path directly (might be the generated file)
   local directives = dotnet_utils.get_line_directives(file_path)
   if directives then
-    local translated = line_directive.translate_reference_to_generated(line_number, directives)
-    return translated, file_path
+    -- If the file_path is the generated file (has generated_file set)
+    if directives.generated_file then
+      local translated = line_directive.translate_reference_to_generated(line_number, directives)
+      if translated then
+        return translated, directives.generated_file
+      end
+    else
+      -- If the file_path is the reference file, check if it matches
+      if directives.reference_file == normalized_ref_path then
+        local translated = line_directive.translate_reference_to_generated(line_number, directives)
+        if translated and directives.generated_file then
+          return translated, directives.generated_file
+        end
+      end
+    end
   end
+  
+  -- If not found, search through all cached directives for a matching reference_file
+  for cached_path, cached_directives in pairs(line_directive_cache) do
+    if cached_directives.reference_file == normalized_ref_path then
+      local translated = line_directive.translate_reference_to_generated(line_number, cached_directives)
+      if translated and cached_directives.generated_file then
+        return translated, cached_directives.generated_file
+      end
+    end
+  end
+  
   return line_number, nil
 end
 
