@@ -267,8 +267,9 @@ local function create_adapter()
 
       if match_type == "test" then
         for id, test in pairs(tests_in_file) do
+          local translated_line = dotnet_utils.translate_reference_to_generated(test.CodeFilePath, test.LineNumber)
           if
-            definition:start() <= test.LineNumber - 1 and test.LineNumber - 1 <= definition:end_()
+            definition:start() <= translated_line - 1 and translated_line - 1 <= definition:end_()
           then
             table.insert(positions, {
               id = id,
@@ -349,12 +350,13 @@ local function create_adapter()
 
     -- add tests which does not have a matching tree-sitter node.
     for id, test in pairs(tests_in_project) do
+      local line = dotnet_utils.translate_reference_to_generated(test.CodeFilePath, test.LineNumber)
       nodes[#nodes + 1] = {
         id = id,
         type = "test",
         path = test.CodeFilePath,
         name = test.DisplayName,
-        range = { i, 0, i + 1, -1 },
+        range = { line - 1, 0, line - 1, -1 },
       }
       i = i + 1
     end
@@ -461,7 +463,7 @@ local function create_adapter()
 
       -- add tests which does not have a matching tree-sitter node.
       for id, test in pairs(tests_in_file) do
-        local line = test.LineNumber or 0
+        local line = dotnet_utils.translate_reference_to_generated(test.CodeFilePath, test.LineNumber)
         nodes[#nodes + 1] = {
           id = id,
           type = "test",

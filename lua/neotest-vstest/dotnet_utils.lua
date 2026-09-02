@@ -2,6 +2,7 @@ local nio = require("nio")
 local lib = require("neotest.lib")
 local logger = require("neotest.logging")
 local files = require("neotest-vstest.files")
+local line_directive = require("neotest-vstest.line_directive")
 
 --- @class BuildOpts
 --- @field additional_args? string[]
@@ -122,6 +123,9 @@ local proj_info_cache = {}
 ---@type table<string, string>
 local file_to_project_map = {}
 
+---@type table<string, line_directive.LineDirectiveMap>
+local line_directive_cache = {}
+
 local project_semaphore = {}
 
 ---collects project information based on file
@@ -238,17 +242,69 @@ function dotnet_utils.get_proj_info(path)
 
   proj_info_cache[vim.fs.normalize(proj_data.proj_file)] = proj_data
 
-  for _, item in ipairs(output.Items.Compile) do
-    file_to_project_map[vim.fs.normalize(item.FullPath)] = proj_data.proj_file
-  end
+   for _, item in ipairs(output.Items.Compile) do
+     file_to_project_map[vim.fs.normalize(item.FullPath)] = proj_data.proj_file
+   end
 
-  semaphore.release()
-  return (
-    proj_data.dll_file ~= ""
-    and proj_data.proj_file ~= ""
-    and (proj_data.is_test_project or proj_data.is_mtp_project)
-    and proj_data
-  ) or nil
+   semaphore.release()
+   return (
+     proj_data.dll_file ~= ""
+     and proj_data.proj_file ~= ""
+     and (proj_data.is_test_project or proj_data.is_mtp_project)
+     and proj_data
+   ) or nil
+ end
+
+---Cache line directive mappings for a file
+---@param file_path string
+---@param content string?
+function dotnet_utils.cache_line_directives(file_path, content)
+  local normalized_path = vim.fs.normalize(file_path)
+  if content then
+    local directives = line_directive.parse_line_directives(content)
+    if directives then
+      line_directive_cache[normalized_path] = directives
+      logger.debug(
+        "neotest-vstest: cached line directives for "
+          .. normalized_path
+          .. " -> "
+          .. directives.reference_file
+      )
+    end
+  end
+end
+
+---Get cached line directive mapping for a file
+---@param file_path string
+---@return line_directive.LineDirectiveMap?
+function dotnet_utils.get_line_directives(file_path)
+  local normalized_path = vim.fs.normalize(file_path)
+  return line_directive_cache[normalized_path]
+end
+
+---Translate line number from generated file to reference file
+---@param file_path string
+---@param line_number number
+---@return number, string? translated_line, reference_file
+function dotnet_utils.translate_generated_to_reference(file_path, line_number)
+  local directives = dotnet_utils.get_line_directives(file_path)
+  if directives then
+    return line_directive.translate_generated_to_reference(line_number, directives), directives.reference_file
+  end
+  return line_number, nil
+end
+
+---Translate line number from reference file to generated file
+---@param file_path string
+---@param line_number number
+---@return number, string? translated_line, generated_file
+function dotnet_utils.translate_reference_to_generated(file_path, line_number)
+  local directives = dotnet_utils.get_line_directives(file_path)
+  if directives then
+    local translated = line_directive.translate_reference_to_generated(line_number, directives)
+    return translated, file_path
+  end
+  return line_number, nil
 end
 
 ---@param solution_path string

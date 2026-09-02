@@ -1,7 +1,9 @@
 local nio = require("nio")
 local lib = require("neotest.lib")
 local logger = require("neotest.logging")
+local files = require("neotest-vstest.files")
 local cli_wrapper = require("neotest-vstest.vstest.cli_wrapper")
+local dotnet_utils = require("neotest-vstest.dotnet_utils")
 
 local M = {}
 
@@ -90,23 +92,31 @@ function M.discover_tests_in_project(runner, settings, project)
 
     logger.debug("neotest-vstest: file has been populated. Extracting test cases...")
 
-    for _, line in ipairs(lines) do
-      ---@type { File: string, Test: table }
-      local decoded = vim.json.decode(line, { luanil = { object = true } }) or {}
-      local file = vim.fs.normalize(decoded.File or "")
-      local tests = tests_in_files[file] or {}
+  for _, line in ipairs(lines) do
+    ---@type { File: string, Test: table }
+    local decoded = vim.json.decode(line, { luanil = { object = true } }) or {}
+    local file = vim.fs.normalize(decoded.File or "")
+    local tests = tests_in_files[file] or {}
 
-      local test = {
-        [decoded.Test.Id] = {
-          CodeFilePath = decoded.Test.CodeFilePath,
-          DisplayName = decoded.Test.DisplayName,
-          LineNumber = decoded.Test.LineNumber,
-          FullyQualifiedName = decoded.Test.FullyQualifiedName,
-        },
-      }
+    local test = {
+      [decoded.Test.Id] = {
+        CodeFilePath = decoded.Test.CodeFilePath,
+        DisplayName = decoded.Test.DisplayName,
+        LineNumber = decoded.Test.LineNumber,
+        FullyQualifiedName = decoded.Test.FullyQualifiedName,
+      },
+    }
 
-      tests_in_files[file] = vim.tbl_extend("force", tests, test)
+    tests_in_files[file] = vim.tbl_extend("force", tests, test)
+
+    -- Cache line directives for the file to handle #line directives
+    if file and vim.endswith(file, ".cs") then
+      local content = files.read(file)
+      if content then
+        dotnet_utils.cache_line_directives(file, content)
+      end
     end
+  end
 
     -- DisplayName may be almost equal to FullyQualifiedName of a test
     -- In this case the DisplayName contains a lot of redundant information in the neotest tree.
