@@ -9,11 +9,13 @@ local M = {}
 ---@field settings_selector? fun(project_dir: string): string|nil function to find the .runsettings/testconfig.json in the project dir
 ---@field timeout_ms? number milliseconds to wait before timing out connection with test runner
 ---@field broad_recursive_discovery? boolean enable fallback recursive solution discovery from the current path when no parent solution is found
+---@field code_behind_file_extensions? string[] extensions (without leading dot) of non .cs/.fs files that may be reported as a test's location by vstest, e.g. ".feature" files used by Reqnroll/SpecFlow via `#line` directives in the generated code-behind file
 
 ---@type neotest-vstest.Config
 local default_config = {
   broad_recursive_discovery = true,
   timeout_ms = 5 * 30 * 1000,
+  code_behind_file_extensions = { "feature" },
 }
 
 ---@return neotest-vstest.Config

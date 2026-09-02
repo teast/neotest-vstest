@@ -96,7 +96,12 @@ vim.g.neotest_vstest = {
   end,
   -- if no obvious parent solution is found, broadly scan downward for solution files from current path. This can freeze Neovim when started from broad directories.
   broad_recursive_discovery = true,
-  timeout_ms = 30 * 5 * 1000 -- number of milliseconds to wait before timeout while communicating with adapter client
+  timeout_ms = 30 * 5 * 1000, -- number of milliseconds to wait before timeout while communicating with adapter client
+  -- Extensions (without leading dot) of non .cs/.fs files that vstest may report as a test's
+  -- location. Code-behind generators (e.g. Reqnroll/SpecFlow) use `#line` directives in the
+  -- generated .cs file to remap the test's reported file/line back to the original file
+  -- (e.g. a ".feature" file), so that file needs to be treated as a test file too.
+  code_behind_file_extensions = { "feature" },
 }
 
 require("neotest").setup({

@@ -165,4 +165,47 @@ describe("Test test detection", function()
 
     assert.is_falsy(plugin.is_test_file(project_file))
   end)
+
+  describe("code-behind files using #line directives", function()
+    local feature_file = solution_path .. "/src/CodeBehindTest/Sample.feature"
+    local code_behind_file = solution_path .. "/src/CodeBehindTest/Sample.feature.cs"
+
+    nio.tests.it("identifies the referenced file as a test file", function()
+      assert.is_truthy(plugin.is_test_file(feature_file))
+    end)
+
+    nio.tests.it("maps the #line-remapped test to the referenced file and line", function()
+      local positions = plugin.discover_positions(feature_file)
+
+      assert.is_not_nil(positions, "Positions should not be nil")
+
+      local found
+      for _, position in positions:iter() do
+        if position.type == "test" then
+          found = position
+        end
+      end
+
+      assert.is_not_nil(found, "Expected to find the test reported against the .feature file")
+      assert.are.equal("MyScenario", found.name)
+      assert.are.equal(feature_file, found.path)
+      -- vstest reports 1-based LineNumber 3, positions use 0-based rows.
+      assert.are.equal(2, found.range[1])
+    end)
+
+    nio.tests.it("only lists tests actually reported against the code-behind file", function()
+      local positions = plugin.discover_positions(code_behind_file)
+
+      assert.is_not_nil(positions, "Positions should not be nil")
+
+      local tests = {}
+      for _, position in positions:iter() do
+        if position.type == "test" then
+          tests[#tests + 1] = position.name
+        end
+      end
+
+      assert.are_same({ "RegularTest" }, tests)
+    end)
+  end)
 end)

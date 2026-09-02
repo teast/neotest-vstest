@@ -125,7 +125,13 @@ local function create_adapter()
     local isDotnetFile = (vim.endswith(file_path, ".csproj") or vim.endswith(file_path, ".fsproj"))
       or (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
 
-    if not isDotnetFile then
+    local isCodeBehindReferencedFile = vim.iter(config.code_behind_file_extensions or {}):any(
+      function(extension)
+        return vim.endswith(file_path, "." .. extension)
+      end
+    )
+
+    if not (isDotnetFile or isCodeBehindReferencedFile) then
       return false
     end
 
@@ -409,7 +415,9 @@ local function create_adapter()
       return get_top_level_tests(project)
     end
 
-    local filetype = (vim.endswith(path, ".fs") and "fsharp") or "c_sharp"
+    local filetype = (vim.endswith(path, ".fs") and "fsharp")
+      or (vim.endswith(path, ".cs") and "c_sharp")
+      or nil
 
     local tests_in_file = client:discover_tests_for_path(path)
 
@@ -423,17 +431,6 @@ local function create_adapter()
     if tests_in_file then
       local content = lib.files.read(path)
       tests_in_file = nio.fn.deepcopy(tests_in_file)
-      local lang_tree =
-        vim.treesitter.get_string_parser(content, filetype, { injections = { [filetype] = "" } })
-
-      local root = lang_tree:parse(false)[1]:root()
-
-      ---@type vim.treesitter.Query
-      local query = lib.treesitter.normalise_query(
-        filetype,
-        filetype == "fsharp" and require("neotest-vstest.queries.fsharp")
-          or require("neotest-vstest.queries.c_sharp")
-      )
 
       local sep = lib.files.sep
       local path_elems = vim.split(path, sep, { plain = true })
@@ -442,24 +439,42 @@ local function create_adapter()
           type = "file",
           path = path,
           name = path_elems[#path_elems],
-          range = { root:range() },
+          range = { 0, 0, #vim.split(content, "\n") + 1, -1 },
         },
       }
-      for _, match in query:iter_matches(root, content, nil, nil) do
-        local captured_nodes = {}
-        for i, capture in ipairs(query.captures) do
-          local nodes = match[i]
-          captured_nodes[capture] = type(nodes) == "table" and nodes[#nodes] or nodes
-        end
-        local res = build_position(content, captured_nodes, tests_in_file, path)
-        if res then
-          for _, pos in ipairs(res) do
-            nodes[#nodes + 1] = pos
+
+      if filetype then
+        local lang_tree =
+          vim.treesitter.get_string_parser(content, filetype, { injections = { [filetype] = "" } })
+
+        local root = lang_tree:parse(false)[1]:root()
+
+        nodes[1].range = { root:range() }
+
+        ---@type vim.treesitter.Query
+        local query = lib.treesitter.normalise_query(
+          filetype,
+          filetype == "fsharp" and require("neotest-vstest.queries.fsharp")
+            or require("neotest-vstest.queries.c_sharp")
+        )
+
+        for _, match in query:iter_matches(root, content, nil, nil) do
+          local captured_nodes = {}
+          for i, capture in ipairs(query.captures) do
+            local nodes = match[i]
+            captured_nodes[capture] = type(nodes) == "table" and nodes[#nodes] or nodes
+          end
+          local res = build_position(content, captured_nodes, tests_in_file, path)
+          if res then
+            for _, pos in ipairs(res) do
+              nodes[#nodes + 1] = pos
+            end
           end
         end
       end
 
-      -- add tests which does not have a matching tree-sitter node.
+      -- add tests which does not have a matching tree-sitter node (or all
+      -- tests, for files with no tree-sitter support at all).
       for id, test in pairs(tests_in_file) do
         local line = test.LineNumber or 0
         nodes[#nodes + 1] = {
